@@ -18,13 +18,13 @@
 >   not proposed upstream.
 >
 > - **Install on elementary OS 8** from the signed apt repo at
->   [arsfeld.github.io/pantheon-apt](https://arsfeld.github.io/pantheon-apt), which replaces elementary's
+>   [arsfeld.github.io/pantheon-extras](https://arsfeld.github.io/pantheon-extras), which replaces elementary's
 >   `io.elementary.dock` with `io.elementary.dock-extras`:
 >
 >   ```sh
->   sudo curl -fsSLo /usr/share/keyrings/pantheon-apt.gpg https://arsfeld.github.io/pantheon-apt/pantheon-apt.gpg
->   echo "deb [signed-by=/usr/share/keyrings/pantheon-apt.gpg] https://arsfeld.github.io/pantheon-apt noble main" \
->     | sudo tee /etc/apt/sources.list.d/pantheon-apt.list
+>   sudo curl -fsSLo /usr/share/keyrings/pantheon-extras.gpg https://arsfeld.github.io/pantheon-extras/pantheon-extras.gpg
+>   echo "deb [signed-by=/usr/share/keyrings/pantheon-extras.gpg] https://arsfeld.github.io/pantheon-extras noble main" \
+>     | sudo tee /etc/apt/sources.list.d/pantheon-extras.list
 >   sudo apt update && sudo apt install io.elementary.dock-extras
 >   ```
 >
