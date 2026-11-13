@@ -15,7 +15,7 @@ public class Dock.MainWindow : Gtk.ApplicationWindow {
     }
 
     // Matches top margin in Launcher.css
-    private const int TOP_MARGIN = 64;
+    public const int TOP_MARGIN = 64;
 
     private Settings transparency_settings;
     private static Settings settings = new Settings ("io.elementary.dock");
@@ -26,6 +26,9 @@ public class Dock.MainWindow : Gtk.ApplicationWindow {
     private WindowDragManager window_drag_manager;
     private bool initialized_blur = false;
     private int border_radius = 0;
+    private int surface_width = 0;
+    private int surface_height = 0;
+    private int applied_rise = -1;
 
     class construct {
         set_css_name ("dock-window");
@@ -119,17 +122,10 @@ public class Dock.MainWindow : Gtk.ApplicationWindow {
         });
 
         surface.layout.connect ((surface, width, height) => {
-            // manually set input region since container's shadow are is the content of the window
-            // and it still gets window events
-            var item_manager_width = ItemManager.get_default ().get_width ();
-            var shadow_size = (width - item_manager_width) / 2;
-            var top_margin = TOP_MARGIN + shadow_size;
-            surface.set_input_region (new Cairo.Region.rectangle ({
-                shadow_size,
-                top_margin,
-                item_manager_width,
-                height - top_margin
-            }));
+            surface_width = width;
+            surface_height = height;
+            applied_rise = -1;
+            update_input_region ();
 
             if (initialized_blur) {
                 return;
@@ -169,6 +165,32 @@ public class Dock.MainWindow : Gtk.ApplicationWindow {
         } else {
             update_panel_x11 ();
         }
+    }
+
+    /**
+     * Manually sets the input region, since the container's shadow area is the
+     * content of the window and it still gets window events. While zoomed,
+     * magnified icons rise into the headroom above the dock, and the region
+     * rises with them so they stay clickable.
+     */
+    public void update_input_region () {
+        unowned var surface = get_surface ();
+        var rise = ItemManager.get_default ().zoom.input_rise;
+        if (surface == null || surface_width == 0 || rise == applied_rise) {
+            return;
+        }
+
+        applied_rise = rise;
+
+        var item_manager_width = ItemManager.get_default ().get_width ();
+        var shadow_size = (surface_width - item_manager_width) / 2;
+        var top_margin = TOP_MARGIN + shadow_size - rise;
+        surface.set_input_region (new Cairo.Region.rectangle ({
+            shadow_size,
+            top_margin,
+            item_manager_width,
+            surface_height - top_margin
+        }));
     }
 
     private void update_panel_x11 () {

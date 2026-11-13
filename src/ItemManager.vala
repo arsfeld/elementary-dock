@@ -13,6 +13,13 @@
 
     public Launcher? added_launcher { get; set; default = null; }
 
+    public ZoomController zoom { get; private set; }
+
+    private Gtk.EventControllerMotion motion;
+    private Gtk.DropControllerMotion drop_motion;
+    private Gtk.Popover? frozen_popover = null;
+    private uint zoom_tick_id = 0;
+
     private DynamicWorkspaceIcon dynamic_workspace_item;
     private StackStore stack_store;
 
@@ -25,6 +32,9 @@
     }
 
     construct {
+        zoom = new ZoomController (this);
+        zoom.changed.connect (queue_zoom);
+
         var app_group = new ItemGroup (AppSystem.get_default ().apps, (obj) => new Launcher ((App) obj));
 
         var background_item = new BackgroundItem ();
@@ -48,9 +58,35 @@
 #if WORKSPACE_SWITCHER
         append (separator);
         append (new ItemGroup (WorkspaceSystem.get_default ().workspaces, (obj) => new WorkspaceIconGroup ((Workspace) obj)));
-        append (dynamic_workspace_item);
+        // A one-item group so the new-workspace button zooms and shifts like every other item.
+        var dynamic_store = new ListStore (typeof (DynamicWorkspaceIcon));
+        dynamic_store.append (dynamic_workspace_item);
+        append (new ItemGroup (dynamic_store, (obj) => (DynamicWorkspaceIcon) obj));
 #endif
         overflow = VISIBLE;
+
+        // Items arriving or leaving, and the widths animating with them, move the
+        // magnified spot under a pointer that has not.
+        for (var child = get_first_child (); child != null; child = child.get_next_sibling ()) {
+            if (child is ItemGroup) {
+                child.notify["rest-width"].connect (queue_zoom);
+                ((ItemGroup) child).children_changed.connect (queue_zoom);
+            }
+        }
+
+        motion = new Gtk.EventControllerMotion ();
+        motion.enter.connect ((x, y) => update_pointer (x));
+        motion.motion.connect ((x, y) => update_pointer (x));
+        motion.leave.connect (on_pointer_left);
+        add_controller (motion);
+
+        // Any drag over the dock (reordering, or a file coming in) puts it at rest,
+        // so drag-and-drop keeps working against fixed slot sizes.
+        drop_motion = new Gtk.DropControllerMotion ();
+        drop_motion.enter.connect (() => zoom.pointer_left ());
+        add_controller (drop_motion);
+
+        maybe_zoom_for_test ();
 
         var drop_target_file = new Gtk.DropTarget (typeof (File), COPY) {
             preload = true
@@ -176,6 +212,124 @@
         var context = Gdk.Display.get_default ().get_app_launch_context ();
         var app = (App) AppSystem.get_default ().apps.get_item (index - 1);
         app.launch (context);
+    }
+
+    // Test hook for screenshot checks: with DOCK_ZOOM_AT=<slots>, the dock zooms
+    // 1 s after it starts as if the pointer rested that many launcher widths from
+    // its left edge, and stays zoomed until a real pointer enters and leaves it.
+    // It fires before DOCK_STACKS_OPEN (1.5 s), so a stack popover opens on the
+    // zoomed layout.
+    private void maybe_zoom_for_test () {
+        var wanted = Environment.get_variable ("DOCK_ZOOM_AT");
+        if (wanted == null) {
+            return;
+        }
+
+        var slots = double.parse (wanted);
+        Timeout.add_once (1000, () => {
+            message ("DOCK_ZOOM_AT: zooming at %g slots", slots);
+            zoom.pointer_moved (slots * get_launcher_size ());
+        });
+    }
+
+    private void update_pointer (double x) {
+        if (drop_motion.contains_pointer || find_open_popover () != null) {
+            return;
+        }
+
+        zoom.pointer_moved (ZoomMath.rest_x (x, get_width (), get_rest_width ()));
+    }
+
+    private void on_pointer_left () {
+        var popover = find_open_popover ();
+        if (popover == null) {
+            zoom.pointer_left ();
+            return;
+        }
+
+        // Hold the zoom while the popover is open, so its anchor does not slide away from it.
+        if (popover != frozen_popover) {
+            if (frozen_popover != null) {
+                frozen_popover.closed.disconnect (on_frozen_popover_closed);
+            }
+
+            frozen_popover = popover;
+            popover.closed.connect (on_frozen_popover_closed);
+        }
+    }
+
+    private void on_frozen_popover_closed () {
+        frozen_popover.closed.disconnect (on_frozen_popover_closed);
+        frozen_popover = null;
+        if (!motion.contains_pointer) {
+            zoom.pointer_left ();
+        }
+    }
+
+    private Gtk.Popover? find_open_popover () {
+        for (var group = get_first_child (); group != null; group = group.get_next_sibling ()) {
+            if (!(group is ItemGroup)) {
+                continue;
+            }
+
+            for (var item = group.get_first_child (); item != null; item = item.get_next_sibling ()) {
+                var popover = ((BaseItem) item).get_open_popover ();
+                if (popover != null) {
+                    return popover;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static double get_child_rest_width (Gtk.Widget child) {
+        if (child is ItemGroup) {
+            return ((ItemGroup) child).rest_width;
+        }
+
+        if (!child.visible) {
+            return 0.0;
+        }
+
+        // Includes margins, so the separator's spacing counts.
+        int minimum, natural, minimum_baseline, natural_baseline;
+        child.measure (HORIZONTAL, -1, out minimum, out natural, out minimum_baseline, out natural_baseline);
+        return natural;
+    }
+
+    private double get_rest_width () {
+        var width = 0.0;
+        for (var child = get_first_child (); child != null; child = child.get_next_sibling ()) {
+            width += get_child_rest_width (child);
+        }
+
+        return width;
+    }
+
+    private void queue_zoom () {
+        if (zoom_tick_id != 0) {
+            return;
+        }
+
+        zoom_tick_id = add_tick_callback (() => {
+            zoom_tick_id = 0;
+            apply_zoom ();
+            return Source.REMOVE;
+        });
+    }
+
+    private void apply_zoom () {
+        var offset = 0.0;
+        for (var child = get_first_child (); child != null; child = child.get_next_sibling ()) {
+            if (child is ItemGroup) {
+                ((ItemGroup) child).apply_zoom (zoom, offset);
+            }
+
+            offset += get_child_rest_width (child);
+        }
+
+        (get_root () as MainWindow)?.update_input_region ();
     }
 
     public static int get_launcher_size () {

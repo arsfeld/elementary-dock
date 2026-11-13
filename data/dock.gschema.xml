@@ -31,6 +31,16 @@
       <summary>Folder stacks shown after the launchers</summary>
       <description>Each entry is (source, view, sort, display): source is an absolute path, a path starting with ~/, or 'applications'; view is 'fan' or 'grid'; sort is 'date-added' or 'name'; display is 'stack', 'grid' or 'folder'.</description>
     </key>
+    <key type="b" name="zoom-enabled">
+      <default>true</default>
+      <summary>Magnify icons under the pointer</summary>
+      <description>Grow the icons near the pointer and spread their neighbours apart, like the macOS dock</description>
+    </key>
+    <key type="i" name="zoom-size">
+      <default>84</default>
+      <summary>Logical pixel size of the icon under the pointer</summary>
+      <description>Clamped to what fits in the space above the dock: 104 with the default 48 px icons</description>
+    </key>
   </schema>
   <schema path="/io/elementary/dock/keybindings/" id="io.elementary.dock.keybindings">
     <key type="as" name="launch-dock-1">

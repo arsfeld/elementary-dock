@@ -32,6 +32,9 @@ public class Dock.BaseItem : Gtk.Box {
 
     public int icon_size { get; set; }
     public double current_pos { get; set; }
+
+    /** Scale applied by the parent ItemGroup; 1.0 at rest. */
+    public double zoom { get; set; default = 1.0; }
     public new string tooltip_text { get; set; }
 
     private bool _moving;
@@ -104,6 +107,9 @@ public class Dock.BaseItem : Gtk.Box {
         popover_tooltip.set_offset (0, -1);
         popover_tooltip.set_parent (this);
 
+        // A method, not a lambda: subclasses replace popover_menu after this construct.
+        notify["zoom"].connect (lift_popovers);
+
         bind_property ("tooltip-text", tooltip_label, "label");
 
         icon_size = dock_settings.get_int ("icon-size");
@@ -134,8 +140,9 @@ public class Dock.BaseItem : Gtk.Box {
         reveal.done.connect (set_revealed_finish);
 
         var animation_target = new Adw.CallbackAnimationTarget ((val) => {
-            ((Gtk.Fixed) parent).move (this, val, 0);
             current_pos = val;
+            // The group positions items, because zoom shifts everything after a magnified item.
+            (parent as ItemGroup)?.place_item (this);
         });
 
         timed_animation = new Adw.TimedAnimation (
@@ -194,9 +201,67 @@ public class Dock.BaseItem : Gtk.Box {
         popover_tooltip.dispose ();
     }
 
+    /**
+     * Called after the item's index in its group may have changed, because items
+     * were added, removed or reordered.
+     */
+    public virtual void index_changed () {}
+
     public uint get_index () {
         var item_group = get_ancestor (typeof (ItemGroup)) as ItemGroup;
         return item_group?.get_index_for_item (this) ?? Gtk.INVALID_LIST_POSITION;
+    }
+
+    /**
+     * Where the icon's bottom edge sits, from the top of an item height px
+     * tall: everything laid out below bin (a launcher's running indicator, the
+     * bottom margin) is subtracted. Zoom scales the item about this line so the
+     * icon grows upward only.
+     */
+    public int get_icon_bottom (int height) {
+        for (var child = bin.get_next_sibling (); child != null; child = child.get_next_sibling ()) {
+            if (!child.should_layout ()) {
+                continue;
+            }
+
+            int minimum, natural, minimum_baseline, natural_baseline;
+            child.measure (VERTICAL, -1, out minimum, out natural, out minimum_baseline, out natural_baseline);
+            height -= natural;
+        }
+
+        return height;
+    }
+
+    /**
+     * The dock counts the headroom above it as window shadow (MainWindow.init_panel),
+     * and GDK clips a popup's anchor to the window geometry, so a popover anchored to
+     * a magnified item would open at the dock's top edge, over the enlarged icon.
+     * Lift each popover by as much as the zoom raised the item's top. ItemGroup scales
+     * the item about get_icon_bottom (), so that is how far the top rises. At rest
+     * zoom is 1 and the offset is the resting -1.
+     *
+     * Every popover anchored to an item rests at (0, -1): the tooltip above, Launcher's
+     * and BackgroundItem's menus, and the stacks' FanPopover and GridPopover. So the
+     * offset is -1 - rise rather than a resting offset read back and kept.
+     */
+    private void lift_popovers () {
+        var rise = (int) Math.ceil ((zoom - 1.0) * get_icon_bottom (get_height ()));
+        popover_tooltip.set_offset (0, -1 - rise);
+        popover_menu?.set_offset (0, -1 - rise);
+    }
+
+    /**
+     * The menu or other popover currently open on this item, if any. The
+     * hover tooltip does not count.
+     */
+    public Gtk.Popover? get_open_popover () {
+        for (var child = get_first_child (); child != null; child = child.get_next_sibling ()) {
+            if (child is Gtk.Popover && child != popover_tooltip && child.visible) {
+                return (Gtk.Popover) child;
+            }
+        }
+
+        return null;
     }
 
     public void set_revealed (bool revealed) {
@@ -233,8 +298,8 @@ public class Dock.BaseItem : Gtk.Box {
 
     /**
      * Makes the launcher animate a move to the given position. Make sure to
-     * always use this instead of manually calling Gtk.Fixed.move on the manager
-     * when moving a launcher so that its current_pos is always up to date.
+     * always use this instead of setting the position directly, so that
+     * current_pos is always up to date and the group lays the item out.
      */
     public void animate_move (double new_position) {
         if (timed_animation.value_to == new_position) {
@@ -324,14 +389,14 @@ public class Dock.BaseItem : Gtk.Box {
     }
 
     private void wait_and_show_tooltip (uint delay_ms) {
-        if (!popover_menu.visible && tooltip_text != null) {
+        if ((popover_menu == null || !popover_menu.visible) && tooltip_text != null) {
             // Add timeout to avoid "Error 71 (Protocol error) dispatching to Wayland display".
             // This error is probably caused by a bug in GTK caused by the Nvidia driver at least up to v580.
             // See https://github.com/elementary/dock/issues/559
 
             open_tooltip_timeout_id = GLib.Timeout.add_once (delay_ms, () => {
                 open_tooltip_timeout_id = 0;
-                if (!popover_menu.visible) {
+                if (popover_menu == null || !popover_menu.visible) {
                     popover_tooltip.popup ();
                 }
             });

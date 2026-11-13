@@ -377,11 +377,16 @@ public class Dock.Launcher : BaseItem {
         });
     }
 
+    public override void index_changed () {
+        update_tooltip ();
+    }
+
     private void update_tooltip () {
         string[] accels = {};
-        var index = (int) current_pos / ItemManager.get_launcher_size ();
+        // current_pos / launcher size is wrong while the dock is zoomed
+        var index = get_index ();
         if (index < 9) {
-            accels = keybinding_settings.get_strv ("launch-dock-%i".printf (index + 1));
+            accels = keybinding_settings.get_strv ("launch-dock-%u".printf (index + 1));
         }
 
         tooltip_text = Granite.markup_accel_tooltip (

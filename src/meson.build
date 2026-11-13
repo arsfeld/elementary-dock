@@ -1,4 +1,5 @@
 subdir('Stacks')
+subdir('Zoom')
 sources = [
     'Application.vala',
     'BaseIconGroup.vala',
@@ -35,6 +36,7 @@ sources = [
 ]
 
 sources += stacks_sources
+sources += zoom_sources
 
 executable(
     meson.project_name(),
