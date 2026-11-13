@@ -26,6 +26,10 @@ gio_unix_dep = dependency('gio-unix-2.0', version: '>=@0@'.format(glib_version))
 glib_dep = dependency('glib-2.0', version: '>=@0@'.format(glib_version))
 gobject_dep = dependency('gobject-2.0', version: '>=@0@'.format(glib_version))
 gtk_dep = dependency('gtk4')
+# Gtk.SymbolicPaintable.snapshot_with_weight is new in GTK 4.22 (src/Icons).
+if gtk_dep.version().version_compare('>=4.22')
+    add_project_arguments('--define', 'HAS_GTK_4_22', language: 'vala')
+endif
 gtk_wayland_dep = dependency('gtk4-wayland')
 gtk_x11_dep = dependency('gtk4-x11')
 x11_dep = dependency('x11')

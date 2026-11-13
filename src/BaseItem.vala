@@ -35,6 +35,10 @@ public class Dock.BaseItem : Gtk.Box {
 
     /** Scale applied by the parent ItemGroup; 1.0 at rest. */
     public double zoom { get; set; default = 1.0; }
+
+    /** The scale icons inside this item rasterize at: IconMath.render_scale_for (zoom). */
+    public int render_scale { get; private set; default = 1; }
+
     public new string tooltip_text { get; set; }
 
     private bool _moving;
@@ -109,6 +113,7 @@ public class Dock.BaseItem : Gtk.Box {
 
         // A method, not a lambda: subclasses replace popover_menu after this construct.
         notify["zoom"].connect (lift_popovers);
+        notify["zoom"].connect (update_render_scale);
 
         bind_property ("tooltip-text", tooltip_label, "label");
 
@@ -230,6 +235,15 @@ public class Dock.BaseItem : Gtk.Box {
         }
 
         return height;
+    }
+
+    // Changes only when the zoom crosses a whole number, so images look their icon up
+    // again a few times per hover, not every frame.
+    private void update_render_scale () {
+        var scale = IconMath.render_scale_for (zoom);
+        if (scale != render_scale) {
+            render_scale = scale;
+        }
     }
 
     /**

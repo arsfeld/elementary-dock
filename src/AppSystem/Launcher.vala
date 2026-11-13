@@ -104,11 +104,11 @@ public class Dock.Launcher : BaseItem {
         image = new Gtk.Image ();
 
         var icon = app.app_info.get_icon ();
-        if (icon != null && Gtk.IconTheme.get_for_display (Gdk.Display.get_default ()).has_gicon (icon)) {
-            image.gicon = icon;
-        } else {
-            image.gicon = new ThemedIcon ("application-default-icon");
+        if (icon == null || !Gtk.IconTheme.get_for_display (Gdk.Display.get_default ()).has_gicon (icon)) {
+            icon = new ThemedIcon ("application-default-icon");
         }
+        var resolution = IconResolution.attach (image, icon);
+        bind_property ("render-scale", resolution, "render-scale", SYNC_CREATE);
 
         badge = new Gtk.Label ("!");
         badge.add_css_class (Granite.STYLE_CLASS_BADGE);

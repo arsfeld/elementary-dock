@@ -7,6 +7,7 @@ public class Dock.DynamicWorkspaceIcon : ContainerItem, WorkspaceItem {
     public int workspace_index { get { return (int) WorkspaceSystem.get_default ().workspaces.get_n_items (); } }
 
     private Gtk.Image image;
+    private IconResolution resolution;
 
     public DynamicWorkspaceIcon () {
         Object (group: Group.NONE);
@@ -15,10 +16,12 @@ public class Dock.DynamicWorkspaceIcon : ContainerItem, WorkspaceItem {
     construct {
         var keybinding_settings = new GLib.Settings ("io.elementary.desktop.wm.keybindings");
 
-        image = new Gtk.Image.from_icon_name ("list-add-symbolic") {
+        image = new Gtk.Image () {
             hexpand = true,
             vexpand = true
         };
+        resolution = IconResolution.attach (image, new ThemedIcon ("list-add-symbolic"));
+        bind_property ("render-scale", resolution, "render-scale", SYNC_CREATE);
         image.add_css_class ("add-image");
 
         child = image;
@@ -70,12 +73,12 @@ public class Dock.DynamicWorkspaceIcon : ContainerItem, WorkspaceItem {
     }
 
     public void window_entered (Window window) {
-        image.gicon = window.icon;
+        resolution.icon = window.icon;
         set_state_flags (DROP_ACTIVE, false);
     }
 
     public void window_left () {
-        image.icon_name = "list-add-symbolic";
+        resolution.icon = new ThemedIcon ("list-add-symbolic");
         unset_state_flags (DROP_ACTIVE);
     }
 }

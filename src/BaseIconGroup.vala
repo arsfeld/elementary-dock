@@ -25,7 +25,9 @@ public abstract class Dock.BaseIconGroup : ContainerItem {
     }
 
     private Gtk.Widget create_flow_box_child (Object? item) {
-        var image = new Gtk.Image.from_gicon ((Icon) item);
+        var image = new Gtk.Image ();
+        var resolution = IconResolution.attach (image, (Icon) item);
+        bind_property ("render-scale", resolution, "render-scale", SYNC_CREATE);
         bind_property ("icon-size", image, "pixel-size", SYNC_CREATE, (binding, from_value, ref to_value) => {
             var icon_size = from_value.get_int ();
             to_value.set_int (get_pixel_size (icon_size));
