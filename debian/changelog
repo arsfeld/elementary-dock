@@ -1,0 +1,6 @@
+io.elementary.dock-extras (8.3.3) noble; urgency=medium
+
+  * Placeholder: CI writes the real entry (8.3.3+extras.git<date>.<sha>)
+    before each build.
+
+ -- Alexandre Rosenfeld <alex@rosenfeld.one>  Fri, 13 Nov 2026 00:00:00 +0000
