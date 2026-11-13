@@ -1,3 +1,4 @@
+subdir('Stacks')
 sources = [
     'Application.vala',
     'BaseIconGroup.vala',
@@ -32,6 +33,8 @@ sources = [
     'WorkspaceSystem' / 'WorkspaceItem.vala',
     'WorkspaceSystem' / 'WorkspaceSystem.vala'
 ]
+
+sources += stacks_sources
 
 executable(
     meson.project_name(),

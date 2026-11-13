@@ -14,6 +14,7 @@
     public Launcher? added_launcher { get; set; default = null; }
 
     private DynamicWorkspaceIcon dynamic_workspace_item;
+    private StackStore stack_store;
 
 #if WORKSPACE_SWITCHER
     private Gtk.Separator separator;
@@ -28,6 +29,8 @@
 
         var background_item = new BackgroundItem ();
         var background_group = new ItemGroup (background_item.group_model, (obj) => (BackgroundItem) obj);
+        stack_store = new StackStore ();
+        var stack_group = new ItemGroup (stack_store.configs, (obj) => new StackItem ((StackConfig) obj));
 
 #if WORKSPACE_SWITCHER
         dynamic_workspace_item = new DynamicWorkspaceIcon ();
@@ -40,6 +43,7 @@
 #endif
 
         append (app_group);
+        append (stack_group);
         append (background_group);
 #if WORKSPACE_SWITCHER
         append (separator);

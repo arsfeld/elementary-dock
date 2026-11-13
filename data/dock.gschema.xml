@@ -26,6 +26,11 @@
       <summary>An ordered array of app id's to show as launchers</summary>
       <description>An ordered array of app id's to show as launchers</description>
     </key>
+    <key type="a(ssss)" name="stacks">
+      <default>[]</default>
+      <summary>Folder stacks shown after the launchers</summary>
+      <description>Each entry is (source, view, sort, display): source is an absolute path, a path starting with ~/, or 'applications'; view is 'fan' or 'grid'; sort is 'date-added' or 'name'; display is 'stack', 'grid' or 'folder'.</description>
+    </key>
   </schema>
   <schema path="/io/elementary/dock/keybindings/" id="io.elementary.dock.keybindings">
     <key type="as" name="launch-dock-1">
