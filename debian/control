@@ -1,0 +1,33 @@
+Source: io.elementary.dock-extras
+Section: x11
+Priority: optional
+Maintainer: Alexandre Rosenfeld <alex@rosenfeld.one>
+Build-Depends: debhelper-compat (= 13),
+               gettext,
+               libadwaita-1-dev,
+               libglib2.0-dev,
+               libgranite-7-dev (>= 7.7.0),
+               libgtk-4-dev,
+               libwayland-dev,
+               libx11-dev,
+               meson,
+               valac
+Standards-Version: 4.6.2
+Homepage: https://github.com/arsfeld/elementary-dock
+Vcs-Git: https://github.com/arsfeld/elementary-dock.git -b extras
+Vcs-Browser: https://github.com/arsfeld/elementary-dock/tree/extras
+Rules-Requires-Root: no
+
+Package: io.elementary.dock-extras
+Architecture: any
+Depends: gala (>= 8.3.0), ${misc:Depends}, ${shlibs:Depends}
+Recommends: switcheroo-control
+Conflicts: io.elementary.dock
+Replaces: io.elementary.dock
+Provides: io.elementary.dock
+Description: elementary's dock with folder stacks and zoom
+ elementary's dock with three additions: macOS-style folder stacks
+ (Downloads fanned out newest first, Applications as a grid), magnification
+ under the pointer, and icons that stay sharp while zoomed or tilted.
+ .
+ It replaces io.elementary.dock, and satisfies what depends on it.
