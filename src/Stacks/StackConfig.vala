@@ -23,6 +23,12 @@ public class Dock.StackConfig : Object {
     public Sort sort { get; construct; }
     public Display display { get; construct; }
 
+    // The key's spelling of each enum value, indexed by the value: parse and
+    // to_variant both read these, so the two stay inverse.
+    private const string[] VIEW_NAMES = { "fan", "grid" };
+    private const string[] SORT_NAMES = { "date-added", "name" };
+    private const string[] DISPLAY_NAMES = { "stack", "grid", "folder" };
+
     public bool is_applications { get { return source == APPLICATIONS; } }
 
     public StackConfig (string source, View view, Sort sort, Display display) {
@@ -30,38 +36,63 @@ public class Dock.StackConfig : Object {
     }
 
     public static StackConfig parse (string source, string view, string sort, string display) throws StackConfigError {
+        // Normalized, so a stored `~/Downloads/` and a dropped `/home/u/Downloads`
+        // are the same stack.
         string resolved;
-        if (source == APPLICATIONS || Path.is_absolute (source)) {
+        if (source == APPLICATIONS) {
             resolved = source;
-        } else if (source.has_prefix ("~/")) {
-            resolved = Path.build_filename (Environment.get_home_dir (), source.substring (2));
+        } else if (Path.is_absolute (source) || source.has_prefix ("~/")) {
+            resolved = StackList.normalize (source);
         } else {
             throw new StackConfigError.INVALID ("source must be an absolute path, ~/…, or '%s'", APPLICATIONS);
         }
 
-        View parsed_view;
-        switch (view) {
-            case "fan": parsed_view = FAN; break;
-            case "grid": parsed_view = GRID; break;
-            default: throw new StackConfigError.INVALID ("unknown view '%s'", view);
+        View parsed_view = 0;
+        if (!parse_name (view, VIEW_NAMES, ref parsed_view)) {
+            throw new StackConfigError.INVALID ("unknown view '%s'", view);
         }
-
-        Sort parsed_sort;
-        switch (sort) {
-            case "date-added": parsed_sort = DATE_ADDED; break;
-            case "name": parsed_sort = NAME; break;
-            default: throw new StackConfigError.INVALID ("unknown sort '%s'", sort);
+        Sort parsed_sort = 0;
+        if (!parse_name (sort, SORT_NAMES, ref parsed_sort)) {
+            throw new StackConfigError.INVALID ("unknown sort '%s'", sort);
         }
-
-        Display parsed_display;
-        switch (display) {
-            case "stack": parsed_display = STACK; break;
-            case "grid": parsed_display = GRID; break;
-            case "folder": parsed_display = FOLDER; break;
-            default: throw new StackConfigError.INVALID ("unknown display '%s'", display);
+        Display parsed_display = 0;
+        if (!parse_name (display, DISPLAY_NAMES, ref parsed_display)) {
+            throw new StackConfigError.INVALID ("unknown display '%s'", display);
         }
 
         return new StackConfig (resolved, parsed_view, parsed_sort, parsed_display);
+    }
+
+    private static bool parse_name (string name, string[] names, ref int result) {
+        for (int i = 0; i < names.length; i++) {
+            if (names[i] == name) {
+                result = i;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static string view_name (View view) { return VIEW_NAMES[view]; }
+    public static string sort_name (Sort sort) { return SORT_NAMES[sort]; }
+    public static string display_name (Display display) { return DISPLAY_NAMES[display]; }
+
+    /* source as the key stores it: ~/… under the home directory, else unchanged. */
+    public string saved_source () {
+        var home = Environment.get_home_dir ();
+        if (source.has_prefix (home + "/")) {
+            return "~/" + source.substring (home.length + 1);
+        }
+        return source;
+    }
+
+    /* This entry as one (ssss) child of the `stacks` key. */
+    public Variant to_variant () {
+        return new Variant ("(ssss)", saved_source (), view_name (view), sort_name (sort), display_name (display));
+    }
+
+    public bool same_as (StackConfig other) {
+        return source == other.source && view == other.view && sort == other.sort && display == other.display;
     }
 
     /* Parses an a(ssss) value, logging and skipping invalid entries. */

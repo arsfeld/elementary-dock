@@ -403,14 +403,14 @@ public class Dock.BaseItem : Gtk.Box {
     }
 
     private void wait_and_show_tooltip (uint delay_ms) {
-        if ((popover_menu == null || !popover_menu.visible) && tooltip_text != null) {
+        if (get_open_popover () == null && tooltip_text != null) {
             // Add timeout to avoid "Error 71 (Protocol error) dispatching to Wayland display".
             // This error is probably caused by a bug in GTK caused by the Nvidia driver at least up to v580.
             // See https://github.com/elementary/dock/issues/559
 
             open_tooltip_timeout_id = GLib.Timeout.add_once (delay_ms, () => {
                 open_tooltip_timeout_id = 0;
-                if (popover_menu == null || !popover_menu.visible) {
+                if (get_open_popover () == null) {
                     popover_tooltip.popup ();
                 }
             });

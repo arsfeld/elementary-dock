@@ -9,6 +9,7 @@ stacks_core_sources = files(
     'LauncherProgress.vala',
     'StackConfig.vala',
     'StackEntry.vala',
+    'StackList.vala',
     'StackSource.vala',
 )
 

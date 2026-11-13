@@ -452,6 +452,87 @@ void test_applications_jobs () {
     assert_false (source.tile_busy);
 }
 
+GenericArray<StackConfig> two_stacks () {
+    var list = new GenericArray<StackConfig> ();
+    list.add (new StackConfig (Path.build_filename (Environment.get_home_dir (), "Downloads"), StackConfig.View.FAN, StackConfig.Sort.DATE_ADDED, StackConfig.Display.STACK));
+    list.add (new StackConfig ("applications", StackConfig.View.GRID, StackConfig.Sort.NAME, StackConfig.Display.GRID));
+    return list;
+}
+
+void test_list_round_trip () {
+    var list = two_stacks ();
+    var parsed = StackConfig.parse_all (StackList.to_variant (list));
+    assert_cmpint (parsed.length, EQ, 2);
+    assert_true (parsed[0].same_as (list[0]));
+    assert_true (parsed[1].same_as (list[1]));
+    assert_cmpstr (StackList.to_variant (list).get_child_value (0).get_child_value (0).get_string (), EQ, "~/Downloads");
+}
+
+void test_saved_source () {
+    assert_cmpstr (new StackConfig ("/tmp/x", StackConfig.View.FAN, StackConfig.Sort.NAME, StackConfig.Display.STACK).saved_source (), EQ, "/tmp/x");
+    assert_cmpstr (new StackConfig ("applications", StackConfig.View.GRID, StackConfig.Sort.NAME, StackConfig.Display.GRID).saved_source (), EQ, "applications");
+    // A sibling of home that shares its prefix is not under home.
+    var sibling = Environment.get_home_dir () + "x/y";
+    assert_cmpstr (new StackConfig (sibling, StackConfig.View.FAN, StackConfig.Sort.NAME, StackConfig.Display.STACK).saved_source (), EQ, sibling);
+}
+
+void test_list_add () {
+    var added = StackList.with_added (two_stacks (), "/tmp/stuff/");
+    assert_nonnull (added);
+    assert_cmpint (added.length, EQ, 3);
+    assert_cmpstr (added[2].source, EQ, "/tmp/stuff");
+    assert_true (added[2].view == StackConfig.View.FAN);
+    assert_true (added[2].sort == StackConfig.Sort.DATE_ADDED);
+    assert_true (added[2].display == StackConfig.Display.STACK);
+}
+
+void test_list_add_duplicate () {
+    var home_downloads = Path.build_filename (Environment.get_home_dir (), "Downloads");
+    assert_null (StackList.with_added (two_stacks (), "~/Downloads"));
+    assert_null (StackList.with_added (two_stacks (), home_downloads + "/"));
+    assert_cmpint (StackList.index_of (two_stacks (), home_downloads), EQ, 0);
+    assert_cmpint (StackList.index_of (two_stacks (), "/nowhere"), EQ, -1);
+}
+
+void test_list_duplicate_stored_spelling () {
+    var home_downloads = Path.build_filename (Environment.get_home_dir (), "Downloads");
+    var stored = StackConfig.parse_all (new Variant.parsed ("[('~/Downloads/', 'fan', 'name', 'stack'), ('/tmp//x/.', 'fan', 'name', 'stack')]"));
+    assert_cmpstr (stored[0].source, EQ, home_downloads);
+    assert_cmpstr (stored[1].source, EQ, "/tmp/x");
+    assert_null (StackList.with_added (stored, home_downloads));
+}
+
+void test_list_update_remove () {
+    var list = two_stacks ();
+    var updated = StackList.with_updated (list, "applications", StackConfig.View.FAN, StackConfig.Sort.NAME, StackConfig.Display.FOLDER);
+    assert_true (updated[0] == list[0]);
+    assert_true (updated[1].view == StackConfig.View.FAN);
+    assert_true (updated[1].display == StackConfig.Display.FOLDER);
+    var removed = StackList.with_removed (list, "applications");
+    assert_cmpint (removed.length, EQ, 1);
+    assert_true (removed[0] == list[0]);
+}
+
+void test_list_changed_range () {
+    var list = two_stacks ();
+    uint pos, removed, added;
+    StackList.changed_range (list, StackList.with_updated (list, "applications", StackConfig.View.FAN, StackConfig.Sort.NAME, StackConfig.Display.FOLDER), out pos, out removed, out added);
+    assert_cmpuint (pos, EQ, 1);
+    assert_cmpuint (removed, EQ, 1);
+    assert_cmpuint (added, EQ, 1);
+    StackList.changed_range (list, StackList.with_added (list, "/tmp"), out pos, out removed, out added);
+    assert_cmpuint (pos, EQ, 2);
+    assert_cmpuint (removed, EQ, 0);
+    assert_cmpuint (added, EQ, 1);
+    StackList.changed_range (list, StackList.with_removed (list, list[0].source), out pos, out removed, out added);
+    assert_cmpuint (pos, EQ, 0);
+    assert_cmpuint (removed, EQ, 1);
+    assert_cmpuint (added, EQ, 0);
+    StackList.changed_range (list, two_stacks (), out pos, out removed, out added);
+    assert_cmpuint (removed, EQ, 0);
+    assert_cmpuint (added, EQ, 0);
+}
+
 int main (string[] args) {
     // AppInfo reads these once, on first use: point it at fixture apps only.
     try {
@@ -488,5 +569,12 @@ int main (string[] args) {
     Test.add_func ("/fan-math/open", test_fan_pose_open);
     Test.add_func ("/fan-math/collapsed", test_fan_pose_collapsed);
     Test.add_func ("/app-folders/classify", test_classify);
+    Test.add_func ("/stack-list/round-trip", test_list_round_trip);
+    Test.add_func ("/stack-list/saved-source", test_saved_source);
+    Test.add_func ("/stack-list/add", test_list_add);
+    Test.add_func ("/stack-list/add-duplicate", test_list_add_duplicate);
+    Test.add_func ("/stack-list/duplicate-stored-spelling", test_list_duplicate_stored_spelling);
+    Test.add_func ("/stack-list/update-remove", test_list_update_remove);
+    Test.add_func ("/stack-list/changed-range", test_list_changed_range);
     return Test.run ();
 }

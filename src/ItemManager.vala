@@ -21,7 +21,10 @@
     private uint zoom_tick_id = 0;
 
     private DynamicWorkspaceIcon dynamic_workspace_item;
-    private StackStore stack_store;
+    private ItemGroup stack_group;
+    // A folder being dragged over the dock, added as a stack if it is dropped.
+    private File? pending_folder = null;
+    public StackStore stacks { get; private set; }
 
 #if WORKSPACE_SWITCHER
     private Gtk.Separator separator;
@@ -39,8 +42,8 @@
 
         var background_item = new BackgroundItem ();
         var background_group = new ItemGroup (background_item.group_model, (obj) => (BackgroundItem) obj);
-        stack_store = new StackStore ();
-        var stack_group = new ItemGroup (stack_store.configs, (obj) => new StackItem ((StackConfig) obj));
+        stacks = new StackStore ();
+        stack_group = new ItemGroup (stacks.configs, (obj) => new StackItem ((StackConfig) obj));
 
 #if WORKSPACE_SWITCHER
         dynamic_workspace_item = new DynamicWorkspaceIcon ();
@@ -87,6 +90,7 @@
         add_controller (drop_motion);
 
         maybe_zoom_for_test ();
+        maybe_drop_for_test ();
 
         var drop_target_file = new Gtk.DropTarget (typeof (File), COPY) {
             preload = true
@@ -95,6 +99,7 @@
 
         double drop_x, drop_y;
         drop_target_file.enter.connect ((x, y) => {
+            pending_folder = null;
             drop_x = x;
             drop_y = y;
             return COPY;
@@ -114,6 +119,19 @@
             }
 
             var file = (File) drop_target_file.get_value ().get_object ();
+
+            // A folder becomes a stack on drop; one that already is a stack bounces instead.
+            if (file.query_file_type (NONE, null) == DIRECTORY) {
+                var path = file.get_path ();
+                if (path != null && stacks.has_stack (path)) {
+                    bounce_stack (path);
+                    drop_target_file.reject ();
+                } else if (path != null) {
+                    pending_folder = file;
+                }
+                return;
+            }
+
             var app_info = new DesktopAppInfo.from_filename (file.get_path ());
 
             if (app_info == null) {
@@ -177,6 +195,11 @@
         });
 
         drop_target_file.drop.connect (() => {
+            if (pending_folder != null) {
+                add_folder_stack (pending_folder.get_path ());
+                pending_folder = null;
+                return true;
+            }
             if (added_launcher != null) {
                 added_launcher.moving = false;
                 added_launcher = null;
@@ -212,6 +235,37 @@
         var context = Gdk.Display.get_default ().get_app_launch_context ();
         var app = (App) AppSystem.get_default ().apps.get_item (index - 1);
         app.launch (context);
+    }
+
+    /* Adds the folder at path as the last stack, or bounces its stack if it has one. */
+    public void add_folder_stack (string path) {
+        if (!stacks.add (path)) {
+            bounce_stack (path);
+        }
+    }
+
+    private void bounce_stack (string path) {
+        var source = StackList.normalize (path);
+        for (var child = stack_group.get_first_child (); child != null; child = child.get_next_sibling ()) {
+            if (child is StackItem && ((StackItem) child).config.source == source) {
+                ((StackItem) child).animate_launch ();
+                return;
+            }
+        }
+    }
+
+    // Test hook: with DOCK_STACKS_DROP=<path>, the dock runs the folder-drop path
+    // for path 1 s after it starts, as if the folder had been dropped on it.
+    private void maybe_drop_for_test () {
+        if (Environment.get_variable ("DOCK_STACKS_DROP") != null) {
+            Timeout.add_once (1000, drop_for_test);
+        }
+    }
+
+    private void drop_for_test () {
+        var path = Environment.get_variable ("DOCK_STACKS_DROP");
+        message ("DOCK_STACKS_DROP: dropping %s", path);
+        add_folder_stack (path);
     }
 
     // Test hook for screenshot checks: with DOCK_ZOOM_AT=<slots>, the dock zooms

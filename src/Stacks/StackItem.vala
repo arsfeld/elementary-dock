@@ -14,6 +14,9 @@ public class Dock.StackItem : BaseIconGroup {
     private StackPile pile;
     private bool torn_down = false;
     private Gtk.Revealer progress_revealer;
+    // The right-click menu. popover_menu stays the fan or grid, which is what
+    // the zoom and the test hooks expect it to be.
+    private Gtk.PopoverMenu menu_popover;
 
     // The launch bounce. Launcher.animate_launch plays the same one, but its
     // animations are private to Launcher, so this is a copy rather than a share.
@@ -59,9 +62,19 @@ public class Dock.StackItem : BaseIconGroup {
         popover_menu = create_popover ();
         popover_menu.set_parent (this);
 
+        menu_popover = create_menu ();
+        menu_popover.set_parent (this);
+
         // Methods, not lambdas: a lambda that uses `this` holds a strong ref to it,
         // and gesture_click and our own parent signal are owned by this item.
+        gesture_click.button = 0;
         gesture_click.released.connect (on_released);
+
+        var long_press = new Gtk.GestureLongPress () {
+            touch_only = true
+        };
+        long_press.pressed.connect (on_long_press);
+        add_controller (long_press);
 
         var bounce_target = new Adw.CallbackAnimationTarget (bounce_frame);
         bounce_down = new Adw.TimedAnimation (this, 0, 0, 600, bounce_target) {
@@ -98,6 +111,7 @@ public class Dock.StackItem : BaseIconGroup {
         notify["parent"].connect (on_parent_changed);
 
         maybe_open_for_test ();
+        maybe_open_menu_for_test ();
     }
 
     ~StackItem () {
@@ -120,6 +134,30 @@ public class Dock.StackItem : BaseIconGroup {
         var index = int.parse (wanted);
         if (index >= 0 && index < configs.length && configs[index].source == config.source) {
             Timeout.add_once (1500, open_for_test);
+        }
+    }
+
+    // Test hook: DOCK_STACKS_MENU=<index into `stacks`> opens that stack's
+    // right-click menu 1.5 s after each matching StackItem is built.
+    private void maybe_open_menu_for_test () {
+        var wanted = Environment.get_variable ("DOCK_STACKS_MENU");
+        if (wanted == null) {
+            return;
+        }
+        var value = StackStore.read_stacks (new Settings ("io.elementary.dock"));
+        if (value == null) {
+            return;
+        }
+        var configs = StackConfig.parse_all (value);
+        var index = int.parse (wanted);
+        if (index >= 0 && index < configs.length && configs[index].same_as (config)) {
+            Timeout.add_once (1500, open_menu_for_test);
+        }
+    }
+
+    private void open_menu_for_test () {
+        if (!torn_down) {
+            open_menu ();
         }
     }
 
@@ -151,7 +189,117 @@ public class Dock.StackItem : BaseIconGroup {
     }
 
     private void on_released () {
-        popover_menu.popup ();
+        switch (gesture_click.get_current_button ()) {
+            case Gdk.BUTTON_PRIMARY:
+                popover_menu.popup ();
+                break;
+            case Gdk.BUTTON_SECONDARY:
+                open_menu ();
+                break;
+        }
+    }
+
+    private void on_long_press () {
+        open_menu ();
+    }
+
+    private void open_menu () {
+        popover_tooltip.popdown ();
+        menu_popover.popup ();
+    }
+
+    private const string ACTION_GROUP_PREFIX = "stack";
+
+    private Gtk.PopoverMenu create_menu () {
+        var actions = new SimpleActionGroup ();
+        var view_action = new SimpleAction.stateful ("view", VariantType.STRING, StackConfig.view_name (config.view));
+        view_action.activate.connect (on_view);
+        actions.add_action (view_action);
+        var sort_action = new SimpleAction.stateful ("sort", VariantType.STRING, StackConfig.sort_name (config.sort));
+        sort_action.activate.connect (on_sort);
+        actions.add_action (sort_action);
+        var display_action = new SimpleAction.stateful ("display", VariantType.STRING, StackConfig.display_name (config.display));
+        display_action.activate.connect (on_display);
+        actions.add_action (display_action);
+        var open_action = new SimpleAction ("open", null);
+        open_action.activate.connect (on_open);
+        actions.add_action (open_action);
+        var remove_action = new SimpleAction ("remove", null);
+        remove_action.activate.connect (on_remove);
+        actions.add_action (remove_action);
+        insert_action_group (ACTION_GROUP_PREFIX, actions);
+
+        var view_section = new Menu ();
+        view_section.append (_("Fan"), "stack.view::fan");
+        view_section.append (_("Grid"), "stack.view::grid");
+
+        var display_section = new Menu ();
+        display_section.append (_("Stack"), "stack.display::stack");
+        display_section.append (_("Grid Preview"), "stack.display::grid");
+        display_section.append (_("Folder"), "stack.display::folder");
+
+        var shell_section = new Menu ();
+        if (!config.is_applications) {
+            shell_section.append (_("Open in Files"), "stack.open");
+        }
+        shell_section.append (_("Remove from Dock"), "stack.remove");
+
+        var menu = new Menu ();
+        menu.append_section (_("View as"), view_section);
+        // The Applications stack's order is fixed by its folders.
+        if (!config.is_applications) {
+            var sort_section = new Menu ();
+            sort_section.append (_("Date Added"), "stack.sort::date-added");
+            sort_section.append (_("Name"), "stack.sort::name");
+            menu.append_section (_("Sort by"), sort_section);
+        }
+        menu.append_section (_("Display as"), display_section);
+        menu.append_section (null, shell_section);
+
+        var popover = new Gtk.PopoverMenu.from_model (menu) {
+            autohide = true,
+            position = TOP
+        };
+        // As Launcher's: the dock window is 1px taller than what shows.
+        popover.set_offset (0, -1);
+        return popover;
+    }
+
+    // Each choice rewrites the `stacks` key; StackStore then replaces this
+    // item with one built from the new config.
+    private void on_view (SimpleAction action, Variant? parameter) {
+        try {
+            var view = StackConfig.parse (config.source, parameter.get_string (), StackConfig.sort_name (config.sort), StackConfig.display_name (config.display)).view;
+            ItemManager.get_default ().stacks.update (config.source, view, config.sort, config.display);
+        } catch (StackConfigError e) {
+            warning ("Bad view %s: %s", parameter.get_string (), e.message);
+        }
+    }
+
+    private void on_sort (SimpleAction action, Variant? parameter) {
+        try {
+            var sort = StackConfig.parse (config.source, StackConfig.view_name (config.view), parameter.get_string (), StackConfig.display_name (config.display)).sort;
+            ItemManager.get_default ().stacks.update (config.source, config.view, sort, config.display);
+        } catch (StackConfigError e) {
+            warning ("Bad sort %s: %s", parameter.get_string (), e.message);
+        }
+    }
+
+    private void on_display (SimpleAction action, Variant? parameter) {
+        try {
+            var display = StackConfig.parse (config.source, StackConfig.view_name (config.view), StackConfig.sort_name (config.sort), parameter.get_string ()).display;
+            ItemManager.get_default ().stacks.update (config.source, config.view, config.sort, display);
+        } catch (StackConfigError e) {
+            warning ("Bad display %s: %s", parameter.get_string (), e.message);
+        }
+    }
+
+    private void on_open () {
+        source.open_location ();
+    }
+
+    private void on_remove () {
+        ItemManager.get_default ().stacks.remove (config.source);
     }
 
     private void bounce_frame (double value) {
@@ -169,7 +317,7 @@ public class Dock.StackItem : BaseIconGroup {
         }
     }
 
-    private void animate_launch () {
+    public void animate_launch () {
         if (bounce_up == null || bounce_up.state == PLAYING || bounce_down.state == PLAYING) {
             return;
         }
@@ -228,6 +376,10 @@ public class Dock.StackItem : BaseIconGroup {
         // ItemManager.frozen_popover holds an open popover until it does.
         popover_menu.popdown ();
         popover_menu.unparent ();
+        menu_popover.popdown ();
+        menu_popover.unparent ();
+        // The action group's handlers are methods of this item.
+        insert_action_group (ACTION_GROUP_PREFIX, null);
 
         // Upstream's own hook for dropping the animation callbacks that capture this item.
         cleanup ();
